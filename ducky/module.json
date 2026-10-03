@@ -1,0 +1,109 @@
+{
+  "api": 1,
+  "name": "Ducky",
+  "version": "0.2.0",
+  "author": "FranjeGueje",
+  "description": "Frame generation profiles for lsfg-vk: edit them and choose one per game.",
+  "order": 30,
+  "tab": "Ducky",
+  "forms": {
+    "profile": [
+      {
+        "key": "multiplier",
+        "type": "number",
+        "label": "Multiplier",
+        "min": 2,
+        "max": 20,
+        "default": 2,
+        "hint": "Frames shown for every real frame: 2 doubles the frame rate, 3 triples it. Higher values add latency and artifacts."
+      },
+      {
+        "key": "flow_scale",
+        "type": "slider",
+        "label": "Flow scale",
+        "min": 0.25,
+        "max": 1,
+        "step": 0.05,
+        "default": 1,
+        "hint": "Resolution used to estimate motion between frames. Lower is lighter on the GPU but less precise; 1.0 is full quality."
+      },
+      {
+        "key": "performance_mode",
+        "type": "toggle",
+        "label": "Performance mode",
+        "default": false,
+        "hint": "Uses a lighter frame generation model: faster, with slightly lower quality. Useful on handhelds."
+      },
+      {
+        "key": "pacing_mode",
+        "type": "radio",
+        "label": "Pacing",
+        "default": "vsync",
+        "options": [
+          {
+            "value": "vsync",
+            "label": "VSync"
+          }
+        ],
+        "hint": "How generated frames are paced on screen. VSync is the only mode lsfg-vk offers today."
+      },
+      {
+        "key": "override_present_mode",
+        "type": "toggle",
+        "label": "Override present mode",
+        "default": true,
+        "hint": "Lets lsfg-vk choose the presentation mode it needs instead of the game's. Turn off only if a game misbehaves."
+      },
+      {
+        "key": "preserve_swapchain_image_count",
+        "type": "toggle",
+        "label": "Preserve swapchain image count",
+        "default": false,
+        "hint": "Keeps the game's own number of swapchain images. Only for games that fail to start or stutter with frame generation."
+      }
+    ],
+    "global": [
+      {
+        "key": "allow_fp16",
+        "type": "toggle",
+        "label": "Allow FP16",
+        "default": true,
+        "hint": "Lets frame generation use half precision where the GPU supports it, which is usually faster. Turn off only to troubleshoot."
+      },
+      {
+        "key": "log_level",
+        "type": "select",
+        "label": "Log level",
+        "default": "info",
+        "options": [
+          {
+            "value": "debug",
+            "label": "Debug"
+          },
+          {
+            "value": "info",
+            "label": "Info"
+          },
+          {
+            "value": "warning",
+            "label": "Warning"
+          },
+          {
+            "value": "error",
+            "label": "Error"
+          }
+        ],
+        "hint": "How much lsfg-vk writes to its log. Info is enough; Debug helps when reporting a problem."
+      },
+      {
+        "key": "dll",
+        "type": "text",
+        "label": "Lossless.dll path",
+        "default": "",
+        "max_length": 512,
+        "placeholder": "automatic",
+        "hint": "Where Lossless.dll is. Leave empty to let lsfg-vk find it in your Lossless Scaling installation."
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@ Pure stdlib, no Invasor imports: tested on its own (tests/test_updates.py).
 
 - What's installed is read from lsfg-vk itself: its Vulkan layer library carries its
   exact version as a string ("2.0.0", "2.0.0.r1.g0e7a389"…), so it's right however
-  lsfg-vk was installed (by hand, another tool or Ducky). No marker file is used.
+  lsfg-vk was installed (by hand, another tool or Patito). No marker file is used.
 - The release index is builds.lsfg-vk.dev: its "Latest release (X)" row links the
   stable tarball lsfg-vk-X.tar.xz (git/RC builds are never offered).
 - Installing checks every entry first (relative paths under bin/, lib/ or share/,
@@ -26,7 +26,7 @@ from pathlib import Path, PurePosixPath
 
 INDEX = "https://builds.lsfg-vk.dev/"
 HOST = "builds.lsfg-vk.dev"
-USER_AGENT = "invasor-ducky"
+USER_AGENT = "invasor-patito"
 TIMEOUT = 20
 MAX_DOWNLOAD = 64 << 20
 PREFIX = Path.home() / ".local"
@@ -48,8 +48,8 @@ EMBEDDED = re.compile(rb"(?<![\w.-])(\d{1,3}\.\d{1,3}\.\d{1,3}(?:-rc\d+)?(?:\.r\
 LATEST_RELEASE = re.compile(r'<a href="([^"]+)">[^<]*Latest release \(', re.I)
 
 
-# The lsfg-vk series this Ducky was written and tested against. Same major, newer minor:
-# usable (new options just don't show here). Another major: never installed by Ducky.
+# The lsfg-vk series this Patito was written and tested against. Same major, newer minor:
+# usable (new options just don't show here). Another major: never installed by Patito.
 TESTED = (2, 0)
 SUPPORTED_MAJOR = 2
 
@@ -137,7 +137,7 @@ def find_layer(dirs=LAYER_DIRS):
 def installed(dirs=LAYER_DIRS, prefix=PREFIX):
     """{version, path, local}: lsfg-vk's version as its library reports it (None if it
     can't be read), the library's path, and whether it lives under ~/.local (the only
-    place Ducky updates). None if lsfg-vk isn't installed."""
+    place Patito updates). None if lsfg-vk isn't installed."""
     found = find_layer(dirs)
     if not found:
         return None

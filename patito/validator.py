@@ -1,9 +1,9 @@
 """lsfg-vk's own config validator: `lsfg-vk-cli validate -c <file>` (lsfg-vk 2.0+).
 
-Used as a second safety net before Ducky replaces conf.toml: lsfg-vk judges its own
+Used as a second safety net before Patito replaces conf.toml: lsfg-vk judges its own
 format (it rejects, e.g., unknown keys and out-of-range values), so a newer lsfg-vk's
-rules are honoured even when Ducky doesn't know them. Optional: without lsfg-vk-cli
-(older or differently packaged installs) Ducky relies on its own checks.
+rules are honoured even when Patito doesn't know them. Optional: without lsfg-vk-cli
+(older or differently packaged installs) Patito relies on its own checks.
 
 Pure stdlib, no Invasor imports.
 """

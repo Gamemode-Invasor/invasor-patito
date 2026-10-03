@@ -40,7 +40,7 @@ unknown_future_key = "kept"
 
 
 def load_backend():
-    name = "ducky_backend_under_test"
+    name = "patito_backend_under_test"
     for n in [n for n in sys.modules if n == name or n.startswith(name + ".")]:
         del sys.modules[n]
     spec = importlib.util.spec_from_file_location(name, HERE / "backend.py", submodule_search_locations=[str(HERE)])
@@ -64,10 +64,10 @@ class FakeCtx:
     toml = tomlio
 
     def __init__(self):
-        manifest = schema.parse_manifest(json.loads((HERE / "module.json").read_text()), "ducky")
+        manifest = schema.parse_manifest(json.loads((HERE / "module.json").read_text()), "patito")
         self.forms = {n: Form(f) for n, f in manifest["form_fields"].items()}
         self.game = FakeGame()
-        self.log = logging.getLogger("test.ducky")
+        self.log = logging.getLogger("test.patito")
 
 
 class Backend(unittest.TestCase):
@@ -205,7 +205,7 @@ class Backend(unittest.TestCase):
 
     def test_a_broken_validator_does_not_block(self):
         self.b._cli = lambda: str(self.path.parent / "missing-cli")
-        with self.assertLogs("test.ducky", "WARNING"):
+        with self.assertLogs("test.patito", "WARNING"):
             self.assertEqual(self.b.profile_set("default", "multiplier", 4), 4)
 
 

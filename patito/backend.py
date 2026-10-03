@@ -1,4 +1,4 @@
-"""Ducky: lsfg-vk frame generation profiles from Invasor's panel.
+"""Patito: lsfg-vk frame generation profiles from Invasor's panel.
 
 The source of truth is lsfg-vk's own conf.toml (lsfg.config_path()), never Invasor's
 settings: every call reads it, changes what was asked, and writes it back with
@@ -41,13 +41,13 @@ _cli_missing_logged = False
 
 
 def _cli():
-    """lsfg-vk-cli of the lsfg-vk in use, or None (then Ducky's own checks are all there is)."""
+    """lsfg-vk-cli of the lsfg-vk in use, or None (then Patito's own checks are all there is)."""
     global _cli_missing_logged
     found = updates.find_layer()
     cli = validator.find_cli(found[1] if found else None)
     if cli is None and not _cli_missing_logged:
         _cli_missing_logged = True
-        ctx.log.info("lsfg-vk-cli not found: conf.toml changes are checked by Ducky only")
+        ctx.log.info("lsfg-vk-cli not found: conf.toml changes are checked by Patito only")
     return cli
 
 
@@ -62,7 +62,7 @@ def _lsfg_validate(tmp_path):
     except validator.Rejected as e:
         raise ctx.InvalidArgument(f"lsfg-vk rejected the change: {e}") from None
     except (OSError, TimeoutError) as e:
-        ctx.log.warning("lsfg-vk-cli couldn't validate (%s): saving with Ducky's own checks", e)
+        ctx.log.warning("lsfg-vk-cli couldn't validate (%s): saving with Patito's own checks", e)
 
 
 def lsfg_problem(path=None):
@@ -214,7 +214,7 @@ def update_status():
     """{installed, latest, state, path}: the lsfg-vk version its own layer reports and the
     latest stable (asked of builds.lsfg-vk.dev only now, never in the background).
     state: newer_available, up_to_date, ahead (installed is newer: nothing offered),
-    system (installed outside ~/.local: Ducky doesn't touch it), not_installed."""
+    system (installed outside ~/.local: Patito doesn't touch it), not_installed."""
     have = updates.installed()
     try:
         latest = updates.fetch_latest()
@@ -238,7 +238,7 @@ def update_status():
 
 
 def compat():
-    """{installed, compat, tested}: whether the installed lsfg-vk is the series Ducky was
+    """{installed, compat, tested}: whether the installed lsfg-vk is the series Patito was
     tested with (no network)."""
     have = updates.installed()
     version = have and have["version"]
@@ -256,7 +256,7 @@ def update_install():
             "system": "lsfg-vk is installed by the system, not in ~/.local: update it there",
         }[status["state"]])
     if status["latest_compat"] == "unsupported":
-        raise ctx.InvalidArgument(f"lsfg-vk {status['latest']} is a new major version: update Ducky first")
+        raise ctx.InvalidArgument(f"lsfg-vk {status['latest']} is a new major version: update Patito first")
     name = f"lsfg-vk-{status['latest']}.tar.xz"
     try:
         files = updates.install(updates.download(name), status["latest"])

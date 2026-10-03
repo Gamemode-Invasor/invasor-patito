@@ -1,11 +1,11 @@
 {
   "api": 1,
-  "name": "Ducky",
+  "name": "Patito",
   "version": "0.2.0",
   "author": "FranjeGueje",
   "description": "Frame generation profiles for lsfg-vk: edit them and choose one per game.",
   "order": 30,
-  "tab": "Ducky",
+  "tab": "Patito",
   "forms": {
     "profile": [
       {

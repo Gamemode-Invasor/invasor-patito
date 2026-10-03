@@ -1,10 +1,10 @@
 import { currentGame, defineModule, ui, type FormStore, type ModuleCtx, type SettingValue } from "invasor";
 
-// Ducky: lsfg-vk frame generation from the panel.
+// Patito: lsfg-vk frame generation from the panel.
 // Game: one switch per game. On = the game gets its own profile (named after it, its id
 // in active_in) and all its options show below. Off = the game is taken out of it.
 // Manage: lsfg-vk's global options and every profile. Everything lives in lsfg-vk's own
-// conf.toml; Ducky stores nothing of its own.
+// conf.toml; Patito stores nothing of its own.
 
 interface Status {
   installed: boolean;
@@ -32,13 +32,13 @@ function store(ctx: ModuleCtx, get: string, set: string, extra: Record<string, u
 
 const TESTED = "2.0"; // keep in sync with updates.TESTED
 
-/** A note when the installed lsfg-vk isn't the series Ducky was tested with. */
+/** A note when the installed lsfg-vk isn't the series Patito was tested with. */
 async function compatNote(ctx: ModuleCtx): Promise<HTMLElement[]> {
   try {
     const c = await ctx.call<{ installed: string | null; compat: string | null; tested: string }>("compat");
     if (c.compat === "newer_minor" || c.compat === "unsupported")
-      return [ui.info(`⚠ lsfg-vk ${c.installed} is newer than what Ducky was tested with (${c.tested}): some options may be missing.`)];
-    if (c.compat === "older") return [ui.info(`⚠ lsfg-vk ${c.installed} is older than what Ducky was tested with (${c.tested}).`)];
+      return [ui.info(`⚠ lsfg-vk ${c.installed} is newer than what Patito was tested with (${c.tested}): some options may be missing.`)];
+    if (c.compat === "older") return [ui.info(`⚠ lsfg-vk ${c.installed} is older than what Patito was tested with (${c.tested}).`)];
   } catch {
     /* not essential */
   }
@@ -285,7 +285,7 @@ export default defineModule({
           else if (st.state === "system")
             lines.push(ui.info(`lsfg-vk is installed by your system (${st.path}), not in ~/.local: update it with your package manager.`));
           else if (st.latest_compat === "unsupported")
-            lines.push(ui.info(`lsfg-vk ${st.latest} is a new major version that this Ducky doesn't know: update Ducky first.`));
+            lines.push(ui.info(`lsfg-vk ${st.latest} is a new major version that this Patito doesn't know: update Patito first.`));
           else
             lines.push(
               ui.button({
@@ -293,7 +293,7 @@ export default defineModule({
                 onClick: async () => {
                   let what = st.installed ? `Update lsfg-vk from ${st.installed} to ${st.latest}?` : `Install lsfg-vk ${st.latest} in ~/.local?`;
                   if (st.latest_compat === "newer_minor")
-                    what += ` Ducky was tested with lsfg-vk ${st.tested}: new options won't show here (set them with lsfg-vk-ui).`;
+                    what += ` Patito was tested with lsfg-vk ${st.tested}: new options won't show here (set them with lsfg-vk-ui).`;
                   if (!(await ui.confirm(what, { ok: "Install" }))) return;
                   ctx.toast(`Installing lsfg-vk ${st.latest}…`);
                   try {
@@ -310,7 +310,7 @@ export default defineModule({
           result.replaceChildren(...lines);
         };
         el.append(
-          ui.info(`This Ducky is tested with lsfg-vk ${TESTED}.`),
+          ui.info(`This Patito is tested with lsfg-vk ${TESTED}.`),
           ui.info("Stable releases of lsfg-vk from builds.lsfg-vk.dev, installed into ~/.local."),
           ui.button({ label: "Check for updates", onClick: () => void check() }),
           result,
@@ -321,12 +321,12 @@ export default defineModule({
       label: "Credits",
       render(el) {
         el.append(
-          ui.info("Ducky is a panel for lsfg-vk, Lossless Scaling frame generation on Linux (lsfg-vk.dev)."),
+          ui.info("Patito is a panel for lsfg-vk, Lossless Scaling frame generation on Linux (lsfg-vk.dev)."),
           ui.separator(),
           ui.info("Thanks to PancakeTAS and every lsfg-vk contributor for bringing frame generation to Linux."),
           ui.info("Thanks to THS, the developer of Lossless Scaling, whose frame generation lsfg-vk uses (you need your own copy of Lossless Scaling)."),
           ui.separator(),
-          ui.info("Ducky is not affiliated with lsfg-vk or Lossless Scaling. Please don't report problems with this module to them."),
+          ui.info("Patito is not affiliated with lsfg-vk or Lossless Scaling. Please don't report problems with this module to them."),
         );
       },
     },

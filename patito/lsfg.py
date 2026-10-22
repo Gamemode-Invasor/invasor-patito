@@ -10,7 +10,7 @@ lsfg-vk applies the profile whose `active_in` contains the game's Steam app id (
 string) or its executable/process name. A game should be in one profile at most.
 """
 import os
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 
 VERSION = 2
 LAYER_FILE = "VkLayer_LSFGVK_frame_generation.json"

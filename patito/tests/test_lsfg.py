@@ -59,7 +59,7 @@ class Profiles(unittest.TestCase):
 class PerGame(unittest.TestCase):
     def test_entries_are_numeric_ids_for_steam_and_shortcuts(self):
         self.assertEqual(lsfg.game_entry("1245620"), "1245620")
-        self.assertEqual(lsfg.game_entry(3000000001, True), "3000000001")
+        self.assertEqual(lsfg.game_entry(3000000001), "3000000001")
         for bad in ("../1", "", "Game.exe", "12a"):
             with self.subTest(appid=bad), self.assertRaises(ValueError):
                 lsfg.game_entry(bad)

@@ -9,7 +9,6 @@ import { currentGame, defineModule, ui, type FormStore, type ModuleCtx, type Set
 interface Status {
   installed: boolean;
   path: string;
-  exists: boolean;
   error: string | null;
   /** lsfg-vk's own validator complains about the current conf.toml. */
   lsfg_problem: string | null;
@@ -29,8 +28,6 @@ function store(ctx: ModuleCtx, get: string, set: string, extra: Record<string, u
     set: <T extends SettingValue>(key: string, value: T) => ctx.call<T>(set, { ...extra, key, value }),
   };
 }
-
-const TESTED = "2.0"; // keep in sync with updates.TESTED
 
 /** A note when the installed lsfg-vk isn't the series Patito was tested with. */
 async function compatNote(ctx: ModuleCtx): Promise<HTMLElement[]> {
@@ -62,7 +59,7 @@ async function renderGame(ctx: ModuleCtx, force = false) {
     status = await ctx.call<Status>("status");
     if (!status.error) {
       profiles = await ctx.call<ProfileInfo[]>("profiles");
-      if (t) current = await ctx.call("game_profile", { appid: t.game.appid, shortcut: t.game.shortcut });
+      if (t) current = await ctx.call("game_profile", { appid: t.game.appid });
     }
   } catch (e) {
     problem = errorText(e);
@@ -84,7 +81,7 @@ async function renderGame(ctx: ModuleCtx, force = false) {
     } else if (current) {
       const game = t.game;
       const cur = current;
-      const args = { appid: game.appid, shortcut: game.shortcut };
+      const args = { appid: game.appid };
       parts.push(
         ui.toggle({
           label: "Frame generation",
@@ -258,7 +255,7 @@ export default defineModule({
     },
     {
       label: "Updates",
-      render(el, ctx) {
+      async render(el, ctx) {
         const result = document.createElement("div");
         const check = async () => {
           result.replaceChildren(ui.info("Checking builds.lsfg-vk.dev…"));
@@ -291,10 +288,6 @@ export default defineModule({
               ui.button({
                 label: `Install ${st.latest}`,
                 onClick: async () => {
-                  let what = st.installed ? `Update lsfg-vk from ${st.installed} to ${st.latest}?` : `Install lsfg-vk ${st.latest} in ~/.local?`;
-                  if (st.latest_compat === "newer_minor")
-                    what += ` Patito was tested with lsfg-vk ${st.tested}: new options won't show here (set them with lsfg-vk-ui).`;
-                  if (!(await ui.confirm(what, { ok: "Install" }))) return;
                   ctx.toast(`Installing lsfg-vk ${st.latest}…`);
                   try {
                     await ctx.call("update_install");
@@ -305,12 +298,16 @@ export default defineModule({
                   void check();
                 },
               }),
-              ui.info("Games use the new version the next time they start."),
+              ...(st.latest_compat === "newer_minor"
+                ? [ui.info(`Patito was tested with lsfg-vk ${st.tested}: new options won't show here (set them with lsfg-vk-ui).`)]
+                : []),
+              ui.info("Invasor asks before downloading it: builds.lsfg-vk.dev publishes no checksums. Games use the new version the next time they start."),
             );
           result.replaceChildren(...lines);
         };
+        const tested = await ctx.call<{ tested: string }>("compat").then((c) => c.tested, () => "2.0");
         el.append(
-          ui.info(`This Patito is tested with lsfg-vk ${TESTED}.`),
+          ui.info(`This Patito is tested with lsfg-vk ${tested}.`),
           ui.info("Stable releases of lsfg-vk from builds.lsfg-vk.dev, installed into ~/.local."),
           ui.button({ label: "Check for updates", onClick: () => void check() }),
           result,
@@ -337,7 +334,7 @@ export default defineModule({
   showInQam: async (ctx) => {
     const running = ctx.game().running;
     if (!running) return true;
-    const r = await ctx.call<{ profile: string | null }>("game_profile", { appid: running.appid, shortcut: running.shortcut });
+    const r = await ctx.call<{ profile: string | null }>("game_profile", { appid: running.appid });
     return r.profile !== null;
   },
   onGameChange: (_game, ctx) => void renderGame(ctx),

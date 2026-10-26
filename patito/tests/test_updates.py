@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 
 import updates
+from invasor import archive, schema
+
+BAD = (updates.UpdateError, schema.InvalidArgument)
 
 # The shape of the real index (rows trimmed).
 INDEX = """<table>
@@ -107,15 +110,22 @@ class Installed(unittest.TestCase):
 
 
 class Install(unittest.TestCase):
+    """install() with the core's own extract (what ctx.archive.extract runs)."""
+
     def setUp(self):
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
         self.prefix = Path(d.name) / ".local"
+        self.tarball = Path(d.name) / "lsfg-vk.tar.xz"
+
+    def install(self, data, expected="2.1.0"):
+        self.tarball.write_bytes(data)
+        return updates.install(self.tarball, expected, archive.extract, self.prefix)
 
     def test_installs_into_the_prefix(self):
         (self.prefix / "bin").mkdir(parents=True)
         (self.prefix / "bin/other-tool").write_text("keep me")
-        files = updates.install(tarball("2.1.0"), "2.1.0", self.prefix)
+        files = self.install(tarball("2.1.0"))
         self.assertIn("lib/liblsfg-vk-layer.so", files)
         self.assertEqual(updates.library_version(self.prefix / "lib/liblsfg-vk-layer.so"), "2.1.0")
         self.assertTrue((self.prefix / "bin/lsfg-vk-cli").stat().st_mode & 0o100)
@@ -124,20 +134,25 @@ class Install(unittest.TestCase):
 
     def test_version_mismatch_is_reported(self):
         with self.assertRaisesRegex(updates.UpdateError, "reports"):
-            updates.install(tarball("2.0.0"), "2.1.0", self.prefix)
+            self.install(tarball("2.0.0"))
 
     def test_bad_archives_change_nothing(self):
         cases = {
             "not xz": b"nope",
             "traversal": tarball(extra={"./bin/../../evil": b"x"}),
             "absolute": tarball(extra={"/etc/evil": b"x"}),
-            "outside bin/lib/share": tarball(extra={"./etc/thing": b"x"}),
             "symlink": tarball(links=["./lib/link.so"]),
         }
         for label, data in cases.items():
-            with self.subTest(case=label), self.assertRaises(updates.UpdateError):
-                updates.install(data, "2.1.0", self.prefix)
+            with self.subTest(case=label), self.assertRaises(BAD):
+                self.install(data)
         self.assertFalse((self.prefix / "lib").exists())
+        self.assertEqual(list(self.prefix.iterdir()), [])  # no staging left
+
+    def test_only_bin_lib_and_share_are_installed(self):
+        files = self.install(tarball(extra={"./etc/thing": b"x"}))
+        self.assertFalse((self.prefix / "etc").exists())
+        self.assertEqual(sorted(f.split("/")[0] for f in files), ["bin", "lib", "share"])
 
     def test_no_layer_no_install(self):
         out = io.BytesIO()
@@ -145,14 +160,14 @@ class Install(unittest.TestCase):
             info = tarfile.TarInfo("./bin/x")
             tar.addfile(info, io.BytesIO(b""))
         with self.assertRaisesRegex(updates.UpdateError, "Vulkan layer"):
-            updates.install(out.getvalue(), "2.1.0", self.prefix)
+            self.install(out.getvalue())
+        self.assertFalse((self.prefix / "bin").exists())
 
     def test_downloads_only_stable_from_builds(self):
         for name in ("lsfg-vk-2.1.0.r2.gabc1234.tar.xz", "../x.tar.xz", "other.tar.xz"):
             with self.subTest(name=name), self.assertRaises(updates.UpdateError):
-                updates.download(name, opener=lambda *a, **k: None)
-        with self.assertRaises(updates.UpdateError):
-            updates._get("https://evil.example/x", 10, opener=lambda *a, **k: None)
+                updates.url(name)
+        self.assertEqual(updates.url("lsfg-vk-2.1.0.tar.xz"), "https://builds.lsfg-vk.dev/lsfg-vk-2.1.0.tar.xz")
 
 
 if __name__ == "__main__":

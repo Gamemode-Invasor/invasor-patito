@@ -1,7 +1,7 @@
 {
   "api": 1,
   "name": "Patito",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "min_core": "0.3.0",
   "author": "FranjeGueje",
   "description": "Frame generation profiles for lsfg-vk: edit them and choose one per game.",

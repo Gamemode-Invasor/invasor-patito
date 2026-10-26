@@ -6,8 +6,6 @@ ctx.toml (all keys kept, verified, atomic, refused if lsfg-vk-ui saved meanwhile
 A game uses a profile when its id (Steam or non-Steam shortcut) is in that profile's
 active_in.
 """
-import inspect
-import os
 import tempfile
 from pathlib import Path
 
@@ -65,10 +63,9 @@ def _lsfg_validate(tmp_path):
         ctx.log.warning("lsfg-vk-cli couldn't validate (%s): saving with Patito's own checks", e)
 
 
-def lsfg_problem(path=None):
-    """lsfg-vk's complaint about the current conf.toml, or None if it accepts it (or
-    can't be asked)."""
-    path = path or lsfg.config_path()
+def lsfg_problem(path):
+    """lsfg-vk's complaint about conf.toml at `path`, or None if it accepts it (or can't
+    be asked)."""
     cli = _cli()
     if cli is None or not path.exists():
         return None
@@ -77,7 +74,7 @@ def lsfg_problem(path=None):
     except validator.Rejected as e:
         return str(e)
     except (OSError, TimeoutError):
-        return None
+        pass
     return None
 
 
@@ -89,29 +86,13 @@ def _change(fn):
         result = fn(data)
     except (ValueError, KeyError) as e:
         raise ctx.InvalidArgument(_msg(e)) from None
-    _save(path, data, mtime)
+    ctx.toml.save(path, data, mtime, validate=_lsfg_validate)
     return result
-
-
-def _save(path, data, mtime):
-    """ctx.toml.save with lsfg-vk's validation. Invasor cores older than the `validate`
-    hook get the same check here: the new file is written aside, validated, removed."""
-    if "validate" in inspect.signature(ctx.toml.save).parameters:
-        ctx.toml.save(path, data, mtime, validate=_lsfg_validate)
-        return
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.check-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(ctx.toml.dumps(data))
-        _lsfg_validate(Path(tmp))
-    finally:
-        os.unlink(tmp)
-    ctx.toml.save(path, data, mtime)
 
 
 def status():
     path = lsfg.config_path()
-    out = {"installed": lsfg.installed(), "path": str(path), "exists": path.exists(), "error": None, "lsfg_problem": None}
+    out = {"installed": updates.installed() is not None, "path": str(path), "error": None, "lsfg_problem": None}
     try:
         _read()
     except (ctx.Unavailable, ctx.InvalidArgument) as e:
@@ -167,8 +148,7 @@ def profile_delete(name):
 
 def global_get():
     _, data, _ = _read()
-    values = ctx.forms["global"].clean(data.get("global", {}))
-    return values
+    return ctx.forms["global"].clean(data.get("global", {}))
 
 
 def global_set(key, value):
@@ -177,34 +157,34 @@ def global_set(key, value):
     return value
 
 
-def _entry(appid, shortcut):
+def _entry(appid):
     try:
-        return lsfg.game_entry(appid, shortcut)
+        return lsfg.game_entry(appid)
     except ValueError as e:
         raise ctx.InvalidArgument(str(e)) from None
 
 
-def game_profile(appid, shortcut=False):
+def game_profile(appid):
     """{entry, profile, custom}: what identifies the game in active_in, its profile (or
     None), and whether that profile is the game's own (only this game uses it)."""
-    entry = _entry(appid, shortcut)
+    entry = _entry(appid)
     _, data, _ = _read()
     name = lsfg.game_profile(data, entry)
     return {"entry": entry, "profile": name, "custom": name is not None and lsfg.is_custom(data, name, entry)}
 
 
-def make_custom(appid, shortcut=False, title=None):
+def make_custom(appid, title=None):
     """Give the game its own profile (named after it, starting from its current values)."""
-    entry = _entry(appid, shortcut)
+    entry = _entry(appid)
     title = title or (ctx.game.info(appid) or {}).get("name") or entry
     name = _change(lambda data: lsfg.make_custom(data, entry, title, ctx.forms["profile"].defaults()))
     ctx.log.info("game %s (%s) -> its own profile %r", appid, entry, name)
     return {"entry": entry, "profile": name, "custom": True}
 
 
-def set_game_profile(appid, shortcut=False, name=None):
+def set_game_profile(appid, name=None):
     """Use profile `name` for the game from its next launch; None turns it off."""
-    entry = _entry(appid, shortcut)
+    entry = _entry(appid)
     _change(lambda data: lsfg.assign(data, entry, name))
     ctx.log.info("game %s (%s) -> profile %r", appid, entry, name)
     return {"entry": entry, "profile": name}
@@ -247,7 +227,8 @@ def compat():
 
 def update_install():
     """Download and install the latest stable lsfg-vk into ~/.local, only when it's
-    newer than what's installed (or lsfg-vk isn't installed)."""
+    newer than what's installed (or lsfg-vk isn't installed). builds.lsfg-vk.dev publishes
+    no checksums, so ctx.http asks the user first (in the task, and as a dialog)."""
     status = update_status()
     if status["state"] not in ("newer_available", "not_installed"):
         raise ctx.InvalidArgument({
@@ -259,7 +240,12 @@ def update_install():
         raise ctx.InvalidArgument(f"lsfg-vk {status['latest']} is a new major version: update Patito first")
     name = f"lsfg-vk-{status['latest']}.tar.xz"
     try:
-        files = updates.install(updates.download(name), status["latest"])
+        updates.PREFIX.mkdir(parents=True, exist_ok=True)
+        with ctx.task(f"Updating lsfg-vk to {status['latest']}") as t, \
+                tempfile.TemporaryDirectory(prefix=".lsfg-vk-download-", dir=updates.PREFIX) as tmp:
+            got = ctx.http.download(updates.url(name), Path(tmp) / name, task=t)
+            t.update(None, "Installing")
+            files = updates.install(got["path"], status["latest"], ctx.archive.extract)
     except updates.UpdateError as e:
         raise ctx.Unavailable(str(e)) from None
     ctx.log.info("installed lsfg-vk %s (%d files) into %s", status["latest"], len(files), updates.PREFIX)

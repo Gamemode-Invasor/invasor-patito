@@ -1,6 +1,5 @@
 import importlib.util
 import json
-import os
 import logging
 import sys
 import tempfile
@@ -8,16 +7,10 @@ import tomllib
 import unittest
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parents[1]
-# Invasor's core (ctx.toml, forms): $INVASOR_CORE (set by tools/check_module.py), else the
-# core this module sits in (modules/<id>), else a checkout next to this repository
-# (<repo>/<id>/ -> ../invasor).
-_core = os.environ.get("INVASOR_CORE") or next(
-    (str(p) for p in (HERE.parents[1], HERE.parents[1] / "invasor") if (p / "backend/invasor").is_dir()), "")
-sys.path.insert(0, str(Path(_core) / "backend"))
+from invasor import schema, tomlio
+from invasor.modules import Form
 
-from invasor import schema, tomlio  # noqa: E402
-from invasor.modules import Form  # noqa: E402
+from . import HERE
 
 # The shape of a real lsfg-vk v2 config (made-up values).
 CONF = """version = 2
@@ -58,6 +51,34 @@ class FakeGame:
         return {"3000000001": '/games/Thing/Thing.exe'}.get(str(appid))
 
 
+class FakeTask:
+    def __init__(self, label):
+        self.label, self.texts = label, []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def update(self, fraction, text=""):
+        self.texts.append(text)
+
+
+class FakeHttp:
+    """ctx.http.download: writes `data` at dest, or raises `deny` (the user said no)."""
+
+    def __init__(self):
+        self.calls, self.data, self.deny = [], b"tarball", None
+
+    def download(self, url, dest, *, task=None):
+        self.calls.append((url, Path(dest).name, task))
+        if self.deny:
+            raise self.deny
+        Path(dest).write_bytes(self.data)
+        return {"path": str(dest)}
+
+
 class FakeCtx:
     InvalidArgument = schema.InvalidArgument
     Unavailable = schema.Unavailable
@@ -68,6 +89,13 @@ class FakeCtx:
         self.forms = {n: Form(f) for n, f in manifest["form_fields"].items()}
         self.game = FakeGame()
         self.log = logging.getLogger("test.patito")
+        self.http = FakeHttp()
+        self.archive = type("Archive", (), {"extract": staticmethod(lambda *a, **k: [])})()
+        self.tasks = []
+
+    def task(self, label):
+        self.tasks.append(FakeTask(label))
+        return self.tasks[-1]
 
 
 class Backend(unittest.TestCase):
@@ -80,7 +108,9 @@ class Backend(unittest.TestCase):
         self.b = load_backend()
         self.b.lsfg.config_path = lambda env=None: self.path
         self.b._cli = lambda: None  # tests never ask the real lsfg-vk-cli unless they say so
-        self.b.setup(FakeCtx())
+        self.ctx = FakeCtx()
+        self.b.setup(self.ctx)
+        self.b.updates.PREFIX = Path(d.name) / ".local"
 
     def file(self):
         return tomllib.loads(self.path.read_text())
@@ -100,18 +130,18 @@ class Backend(unittest.TestCase):
     def test_per_game_profile(self):
         self.b.profile_create("3x")
         self.assertEqual(self.b.game_profile("1000"), {"entry": "1000", "profile": "default", "custom": True})
-        self.b.set_game_profile("1000", False, "3x")
-        self.b.set_game_profile("3000000001", True, "3x")
+        self.b.set_game_profile("1000", "3x")
+        self.b.set_game_profile("3000000001", "3x")
         self.assertEqual(self.file()["profile"][1]["active_in"], ["1000", "3000000001"])
         self.assertNotIn("active_in", self.file()["profile"][0])
         self.assertEqual(self.b.profiles()[1]["games"], [{"entry": "1000", "name": "Test Game"}, {"entry": "3000000001", "name": None}])
-        self.b.set_game_profile("1000", False, None)
+        self.b.set_game_profile("1000", None)
         self.assertIsNone(self.b.game_profile("1000")["profile"])
         with self.assertRaises(schema.InvalidArgument):
-            self.b.set_game_profile("1000", False, "ghost")
+            self.b.set_game_profile("1000", "ghost")
 
     def test_custom_profile_for_a_game(self):
-        self.b.set_game_profile("2000", False, "default")  # "default" is now shared by two games
+        self.b.set_game_profile("2000", "default")  # "default" is now shared by two games
         self.assertFalse(self.b.game_profile("1000")["custom"])
         made = self.b.make_custom("1000")  # title from the game's name
         self.assertEqual(made, {"entry": "1000", "profile": "Test Game", "custom": True})
@@ -157,8 +187,7 @@ class Backend(unittest.TestCase):
         u = self.b.updates
         calls = []
         u.fetch_latest = lambda opener=None: "lsfg-vk-2.1.0.tar.xz"
-        u.download = lambda name, opener=None: calls.append(name) or b"data"
-        u.install = lambda data, expected, prefix=None: calls.append(expected) or ["lib/x"]
+        u.install = lambda archive, expected, extract: calls.append((Path(archive).read_bytes(), expected)) or ["lib/x"]
         for have, state in ((None, "not_installed"), ({"version": "2.1.0", "path": "/x", "local": True}, "up_to_date"),
                             ({"version": "2.1.0.r2.gabc1234", "path": "/x", "local": True}, "ahead"),
                             ({"version": "2.0.0", "path": "/usr/lib/x", "local": False}, "system"),
@@ -171,18 +200,33 @@ class Backend(unittest.TestCase):
                         self.b.update_install()
                 else:
                     self.assertEqual(self.b.update_install(), {"installed": "2.1.0"})
-        self.assertEqual(calls, ["lsfg-vk-2.1.0.tar.xz", "2.1.0", "lsfg-vk-2.1.0.tar.xz", "2.1.0"])
+        self.assertEqual(calls, [(b"tarball", "2.1.0")] * 2)
+        url = "https://builds.lsfg-vk.dev/lsfg-vk-2.1.0.tar.xz"
+        self.assertEqual([(c[0], c[1]) for c in self.ctx.http.calls], [(url, "lsfg-vk-2.1.0.tar.xz")] * 2)
+        self.assertEqual([c[2] for c in self.ctx.http.calls], self.ctx.tasks)  # progress and question in its task
+        self.assertEqual(self.ctx.tasks[0].label, "Updating lsfg-vk to 2.1.0")
+        self.assertEqual(list(u.PREFIX.iterdir()), [])  # the download is removed
+
+    def test_a_denied_download_installs_nothing(self):
+        u = self.b.updates
+        u.fetch_latest = lambda opener=None: "lsfg-vk-2.1.0.tar.xz"
+        u.installed = lambda: {"version": "2.0.0", "path": "/x", "local": True}
+        u.install = lambda *a: self.fail("must not install")
+        self.ctx.http.deny = schema.Unavailable("the download wasn't allowed")
+        with self.assertRaisesRegex(schema.Unavailable, "wasn't allowed"):
+            self.b.update_install()
+        self.assertEqual(list(u.PREFIX.iterdir()), [])
 
 
     def test_a_new_major_version_is_never_installed(self):
         u = self.b.updates
         u.fetch_latest = lambda opener=None: "lsfg-vk-3.0.0.tar.xz"
         u.installed = lambda: {"version": "2.0.0", "path": "/x", "local": True}
-        u.download = lambda *a, **k: self.fail("must not download")
         st = self.b.update_status()
         self.assertEqual((st["state"], st["latest_compat"], st["installed_compat"]), ("newer_available", "unsupported", "tested"))
         with self.assertRaisesRegex(schema.InvalidArgument, "new major version"):
             self.b.update_install()
+        self.assertEqual(self.ctx.http.calls, [])
 
 
     def fake_cli(self, code, message=""):
@@ -207,28 +251,6 @@ class Backend(unittest.TestCase):
         self.b._cli = lambda: str(self.path.parent / "missing-cli")
         with self.assertLogs("test.patito", "WARNING"):
             self.assertEqual(self.b.profile_set("default", "multiplier", 4), 4)
-
-
-    def test_older_core_without_the_validate_hook(self):
-        real_save = self.b.ctx.toml.save
-
-        class OldToml:
-            dumps = staticmethod(self.b.ctx.toml.dumps)
-            load = staticmethod(self.b.ctx.toml.load)
-
-            @staticmethod
-            def save(path, data, expected_mtime=None, backup=True):
-                return real_save(path, data, expected_mtime, backup)
-
-        self.b.ctx.toml = OldToml
-        before = self.path.read_text()
-        self.fake_cli(1, "Invalid pacing mode: x")
-        with self.assertRaisesRegex(schema.InvalidArgument, "rejected"):
-            self.b.profile_set("default", "multiplier", 5)
-        self.assertEqual(self.path.read_text(), before)
-        self.assertEqual([p.name for p in self.path.parent.iterdir() if ".check-" in p.name], [])
-        self.fake_cli(0)
-        self.assertEqual(self.b.profile_set("default", "multiplier", 5), 5)
 
 
 if __name__ == "__main__":

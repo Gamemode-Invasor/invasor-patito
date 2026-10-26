@@ -1,34 +1,34 @@
 """lsfg-vk updates: find the latest stable release on builds.lsfg-vk.dev and install it
 into ~/.local, the way lsfg-vk's own docs do (`tar -xvf lsfg-vk-X.tar.xz -C ~/.local`).
 
-Pure stdlib, no Invasor imports: tested on its own (tests/test_updates.py).
+Pure stdlib, no Invasor imports: tested on its own (tests/test_updates.py). Downloading is
+done by the backend (ctx.http, which asks the user: builds.lsfg-vk.dev publishes no checksums),
+and unpacking by the `extract` it passes in (ctx.archive.extract).
 
 - What's installed is read from lsfg-vk itself: its Vulkan layer library carries its
   exact version as a string ("2.0.0", "2.0.0.r1.g0e7a389"…), so it's right however
   lsfg-vk was installed (by hand, another tool or Patito). No marker file is used.
 - The release index is builds.lsfg-vk.dev: its "Latest release (X)" row links the
   stable tarball lsfg-vk-X.tar.xz (git/RC builds are never offered).
-- Installing checks every entry first (relative paths under bin/, lib/ or share/,
-  regular files and folders only), unpacks to a staging folder inside the prefix,
-  moves each file into place atomically, then checks the installed version.
+- Installing unpacks only bin/, lib/ and share/ to a staging folder inside the prefix
+  (extract refuses links and paths leading out), moves each file into place atomically,
+  then checks the installed version.
 """
-import io
 import json
 import os
 import re
 import shutil
-import tarfile
 import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 INDEX = "https://builds.lsfg-vk.dev/"
 HOST = "builds.lsfg-vk.dev"
 USER_AGENT = "invasor-patito"
 TIMEOUT = 20
-MAX_DOWNLOAD = 64 << 20
+MAX_INDEX = 1 << 20
 PREFIX = Path.home() / ".local"
 ALLOWED_TOP = ("bin", "lib", "share")
 LAYER_JSON = "VkLayer_LSFGVK_frame_generation.json"
@@ -151,79 +151,45 @@ def installed(dirs=LAYER_DIRS, prefix=PREFIX):
 
 # ---------- downloading and installing ----------
 
-def _get(url, limit, opener):
-    parts = urllib.parse.urlparse(url)
-    if parts.scheme != "https" or parts.hostname != HOST:
-        raise UpdateError(f"refusing to download from {parts.hostname or url!r}")
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def fetch_latest(opener=urllib.request.urlopen):
+    """The latest stable tarball's name, read from the release index."""
+    req = urllib.request.Request(INDEX, headers={"User-Agent": USER_AGENT})
     try:
         with opener(req, timeout=TIMEOUT) as res:
-            data = res.read(limit + 1)
+            html = res.read(MAX_INDEX + 1)
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise UpdateError(f"can't reach {HOST} ({getattr(e, 'reason', e)})") from None
-    if len(data) > limit:
-        raise UpdateError("download too large")
-    return data
+    if len(html) > MAX_INDEX:
+        raise UpdateError("the release index is too large")
+    return latest_stable(html.decode("utf-8", "replace"))
 
 
-def fetch_latest(opener=urllib.request.urlopen):
-    return latest_stable(_get(INDEX, 1 << 20, opener).decode("utf-8", "replace"))
-
-
-def download(name, opener=urllib.request.urlopen):
+def url(name):
+    """Where a stable release tarball is downloaded from (only builds.lsfg-vk.dev)."""
     if not STABLE_NAME.match(name):
         raise UpdateError(f"not a stable release: {name!r}")
-    return _get(INDEX + urllib.parse.quote(name), MAX_DOWNLOAD, opener)
+    return INDEX + urllib.parse.quote(name)
 
 
-def _members(tar):
-    """Every entry, checked; (relative path, member) of the regular files to install."""
-    files = []
-    for m in tar.getmembers():
-        path = PurePosixPath(m.name)
-        parts = [p for p in path.parts if p not in (".", "")]
-        if path.is_absolute() or ".." in parts:
-            raise UpdateError(f"unsafe path in the archive: {m.name!r}")
-        if not parts:
-            continue
-        if parts[0] not in ALLOWED_TOP:
-            raise UpdateError(f"unexpected file in the archive: {m.name!r}")
-        if m.isdir():
-            continue
-        if not m.isfile():
-            raise UpdateError(f"the archive contains a link or special file: {m.name!r}")
-        files.append(("/".join(parts), m))
-    if not any(rel == LAYER for rel, _ in files):
-        raise UpdateError("this archive doesn't contain lsfg-vk's Vulkan layer")
-    return files
-
-
-def install(data, expected, prefix=PREFIX):
-    """Install a release tarball into `prefix`. Nothing is changed unless the whole
-    archive is valid; afterwards the installed layer must report `expected`.
-    Returns the list of installed files (relative)."""
+def install(archive, expected, extract, prefix=PREFIX):
+    """Install a release tarball (a file) into `prefix`, unpacked with
+    extract(archive, dest, only_top=…), which raises if the archive isn't valid. Nothing is
+    changed unless it unpacks whole and holds lsfg-vk's layer; afterwards the installed
+    layer must report `expected`. Returns the list of installed files (relative)."""
+    prefix.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".lsfg-vk-update-", dir=prefix))
     try:
-        tar = tarfile.open(fileobj=io.BytesIO(data), mode="r:xz")
-    except (tarfile.TarError, EOFError, OSError) as e:
-        raise UpdateError(f"not a valid .tar.xz: {e}") from None
-    with tar:
-        files = _members(tar)
-        prefix.mkdir(parents=True, exist_ok=True)
-        staging = Path(tempfile.mkdtemp(prefix=".lsfg-vk-update-", dir=prefix))
-        try:
-            for rel, m in files:
-                target = staging / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with tar.extractfile(m) as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-                os.chmod(target, 0o755 if m.mode & 0o111 else 0o644)
-            for rel, _ in files:  # everything is unpacked: now put it in place
-                dest = prefix / rel
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(staging / rel, dest)
-        finally:
-            shutil.rmtree(staging, ignore_errors=True)
+        root = staging / "x"
+        files = [rel for rel in extract(archive, root, only_top=ALLOWED_TOP) if (root / rel).is_file()]
+        if LAYER not in files:
+            raise UpdateError("this archive doesn't contain lsfg-vk's Vulkan layer")
+        for rel in files:  # everything is unpacked: now put it in place
+            dest = prefix / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(root / rel, dest)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     found = installed([prefix / "share/vulkan/implicit_layer.d"], prefix)
     if not found or found["version"] != expected:
         raise UpdateError(f"installed, but the layer reports {found and found['version']!r} instead of {expected!r}")
-    return [rel for rel, _ in files]
+    return files

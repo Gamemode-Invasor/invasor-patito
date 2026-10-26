@@ -13,13 +13,6 @@ import os
 from pathlib import Path
 
 VERSION = 2
-LAYER_FILE = "VkLayer_LSFGVK_frame_generation.json"
-LAYER_DIRS = (
-    Path.home() / ".local/share/vulkan/implicit_layer.d",
-    Path("/usr/share/vulkan/implicit_layer.d"),
-    Path("/usr/local/share/vulkan/implicit_layer.d"),
-    Path("/etc/vulkan/implicit_layer.d"),
-)
 MAX_NAME = 64
 
 
@@ -30,10 +23,6 @@ def config_path(env=None):
         return Path(env["LSFGVK_CONFIG"])
     base = Path(env["XDG_CONFIG_HOME"]) if env.get("XDG_CONFIG_HOME") else Path.home() / ".config"
     return base / "lsfg-vk" / "conf.toml"
-
-
-def installed(dirs=LAYER_DIRS):
-    return any((d / LAYER_FILE).is_file() for d in dirs)
 
 
 def check(data):
@@ -112,7 +101,7 @@ def set_global(data, key, value):
         table[key] = value
 
 
-def game_entry(appid, shortcut=False, exe=None):
+def game_entry(appid):
     """What goes in `active_in` for a game: its id as a string, for Steam games and
     non-Steam shortcuts alike (the shortcut's id from shortcuts.vdf). Never a title."""
     appid = str(appid)
